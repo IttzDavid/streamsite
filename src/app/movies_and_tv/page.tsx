@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import Image from "next/image";
 
 type MediaType = "movie" | "tv";
@@ -162,42 +163,49 @@ export default function Page() {
 
                         return (
                             <li key={r.id} style={styles.item}>
-                                <div style={styles.itemLeft}>
-                                    {posterUrl ? (
-                                        <Image src={posterUrl} alt={title} width={92} height={138} style={{ borderRadius: 6 }} unoptimized />
-                                    ) : (
-                                        <div style={styles.posterPlaceholder}>No Image</div>
-                                    )}
-                                </div>
-                                <div style={styles.itemRight}>
-                                    <div style={styles.itemHeader}>
-                                        <strong>{title}</strong>
-                                        <span style={styles.meta}>
-                                            {r.media_type ?? type}
-                                            {year}
-                                        </span>
-                                    </div>
-
-                                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                                        {typeof r.vote_average === "number" && (
-                                            <div style={styles.badge}>
-                                                ⭐ {r.vote_average.toFixed(1)} ({r.vote_count ?? 0})
-                                            </div>
-                                        )}
-                                        {typeof r.popularity === "number" && <div style={styles.badge}>🔥 {Math.round(r.popularity)}</div>}
-                                        {r.genre_ids && r.genre_ids.length > 0 && (
-                                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                                {r.genre_ids.map((g) => (
-                                                    <span key={g} style={styles.genreBadge}>
-                                                        {g}
-                                                    </span>
-                                                ))}
-                                            </div>
+                                <Link
+                                    href={`/title/${r.id}?type=${encodeURIComponent(type)}`}
+                                    style={{ display: "contents" }}
+                                    aria-label={`Open details for ${title}`}
+                                >
+                                    <div style={styles.itemLeft}>
+                                        {posterUrl ? (
+                                            <Image src={posterUrl} alt={title} width={92} height={138} style={{ borderRadius: 6 }} unoptimized />
+                                        ) : (
+                                            <div style={styles.posterPlaceholder}>No Image</div>
                                         )}
                                     </div>
 
-                                    {r.overview && <p style={styles.overview}>{r.overview}</p>}
-                                </div>
+                                    <div style={styles.itemRight}>
+                                        <div style={styles.itemHeader}>
+                                            <strong>{title}</strong>
+                                            <span style={styles.meta}>
+                                                {r.media_type ?? type}
+                                                {year}
+                                            </span>
+                                        </div>
+
+                                        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                                            {typeof r.vote_average === "number" && (
+                                                <div style={styles.badge}>
+                                                    ⭐ {r.vote_average.toFixed(1)} ({r.vote_count ?? 0})
+                                                </div>
+                                            )}
+                                            {typeof r.popularity === "number" && <div style={styles.badge}>🔥 {Math.round(r.popularity)}</div>}
+                                            {r.genre_ids && r.genre_ids.length > 0 && (
+                                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                                    {r.genre_ids.map((g) => (
+                                                        <span key={g} style={styles.genreBadge}>
+                                                            {g}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {r.overview && <p style={styles.overview}>{r.overview}</p>}
+                                    </div>
+                                </Link>
                             </li>
                         );
                     })}
