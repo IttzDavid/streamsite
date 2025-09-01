@@ -34,10 +34,19 @@ async function fetchTMDB(path: string) {
 }
 
 export default async function Page() {
-  const [popular, topRated] = await Promise.all([
+  const [popularMovies, topMovies, popularTv, topTv] = await Promise.all([
     fetchTMDB("/movie/popular?language=en-US&page=1").then((r) => r.results ?? []),
     fetchTMDB("/movie/top_rated?language=en-US&page=1").then((r) => r.results ?? []),
+    fetchTMDB("/tv/popular?language=en-US&page=1").then((r) => r.results ?? []),
+    fetchTMDB("/tv/top_rated?language=en-US&page=1").then((r) => r.results ?? []),
   ]);
 
-  return <ClientFeatured popular={popular} topRated={topRated} />;
+  return (
+    <ClientFeatured
+      popularMovies={popularMovies}
+      topMovies={topMovies}
+      popularTv={popularTv}
+      topTv={topTv}
+    />
+  );
 }

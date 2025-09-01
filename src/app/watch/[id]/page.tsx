@@ -1,63 +1,24 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import React, { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+type Params = { id: string } | Promise<{ id: string }>;
 
-export default function WatchPage(
-  props: { params: { id: string } } // <-- treat params as synchronous in client component
-) {
-  const { params } = props;
-  const id = params.id;
+type Search = Record<string, string | string[] | undefined> | Promise<Record<string, string | string[] | undefined>>;
 
-  const search = useSearchParams();
-  const type = (search.get("type") || "movie").toLowerCase(); // "movie" or "tv"
-  const external = search.get("external") === "1";
+export default async function WatchPage(props: { params: Params; searchParams?: Search }) {
+  const { id } = await props.params;
+  const searchParams = (await props.searchParams) || {};
+  const type = String(searchParams["type"] || "movie").toLowerCase();
+  const s = String(searchParams["season"] || searchParams["s"] || "1");
+  const e = String(searchParams["episode"] || searchParams["e"] || "1");
 
-  const [html, setHtml] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const base = (process.env.MOVIE_ENDPOINT || "").replace(/\/+$/, "");
+  if (!base) redirect(`/title/${encodeURIComponent(String(id))}?type=${encodeURIComponent(type)}`);
 
-  useEffect(() => {
-    let mounted = true;
-    const fetchEmbed = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`/api/movies?tmdb=${encodeURIComponent(id)}`);
-        if (!res.ok) {
-          const txt = await res.text().catch(() => res.statusText);
-          throw new Error(`Upstream failed: ${res.status} ${txt}`);
-        }
-        const body = await res.text();
-        if (!mounted) return;
+  const qs = "?ds_lang=en";
+  const upstream =
+    type === "tv"
+      ? `${base}/embed/tv/${encodeURIComponent(String(id))}/${encodeURIComponent(s)}/${encodeURIComponent(e)}${qs}`
+      : `${base}/embed/movie/${encodeURIComponent(String(id))}${qs}`;
 
-        if (external) {
-          const base = (process.env.MOVIE_ENDPOINT || "").replace(/\/+$/, "");
-          const upstream = `${base}/embed/movie/${encodeURIComponent(id)}`;
-          if (!base) throw new Error("NEXT_PUBLIC_MOVIE_ENDPOINT is not configured");
-          window.open(upstream, "_blank", "noopener,noreferrer");
-        } else {
-          setHtml(body);
-        }
-      } catch (err: unknown) {
-        if (err instanceof Error) setError(err.message);
-        else setError(String(err));
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    fetchEmbed();
-    return () => {
-      mounted = false;
-    };
-  }, [id, type, external]);
-
-  return (
-    <main style={{ maxWidth: 1100, margin: "24px auto", padding: "0 16px" }}>
-      <h1>Watch</h1>
-      {loading && <p>Loading player…</p>}
-      {error && <pre style={{ color: "crimson" }}>{String(error)}</pre>}
-      {!loading && !error && html && <div dangerouslySetInnerHTML={{ __html: html }} />}
-    </main>
-  );
+  redirect(upstream);
 }

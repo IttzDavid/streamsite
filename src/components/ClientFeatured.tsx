@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 /* Types */
 type TMDBMovie = {
@@ -16,9 +15,11 @@ type TMDBMovie = {
   vote_average?: number;
 };
 
-type ClientProps = {
-  popular: TMDBMovie[];
-  topRated: TMDBMovie[];
+type Props = {
+  popularMovies: TMDBMovie[];
+  topMovies: TMDBMovie[];
+  popularTv: TMDBMovie[];
+  topTv: TMDBMovie[];
 };
 
 type Item = {
@@ -32,40 +33,67 @@ type Item = {
 
 const IMG = "https://image.tmdb.org/t/p/w500";
 
-export default function ClientFeatured({ popular, topRated }: ClientProps) {
-  const router = useRouter();
-
-  const [tab, setTab] = useState<"movies" | "tv">("movies");
-  const [query, setQuery] = useState("");
-  const [minRating, setMinRating] = useState<number | "any">("any");
-
-  const mapMovie = (m: TMDBMovie): Item => ({
+function toItem(m: TMDBMovie, type: "movie" | "tv"): Item {
+  return {
     id: String(m.id),
-    title: m.title ?? m.name ?? "Untitled",
+    title: (type === "movie" ? m.title : m.name) || m.title || m.name || "Untitled",
     year: Number((m.release_date ?? m.first_air_date ?? "0").slice(0, 4)) || 0,
     rating: Math.round((m.vote_average ?? 0) * 10) / 10,
-    type: "movie",
+    type,
     poster: m.poster_path ? `${IMG}${m.poster_path}` : "",
-  });
+  };
+}
 
-  const popularList = useMemo(() => popular.map(mapMovie), [popular]);
-  const topRatedList = useMemo(() => topRated.map(mapMovie), [topRated]);
+export default function ClientFeatured({ popularMovies, topMovies, popularTv, topTv }: Props) {
+  const [tab, setTab] = useState<"movie" | "tv">("movie");
+  const [query, setQuery] = useState("");
+  const [minRating, setMinRating] = useState<number | "any">("any");
+  const [searchResults, setSearchResults] = useState<Item[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const popularList = useMemo(
+    () => (tab === "movie" ? popularMovies.map((m) => toItem(m, "movie")) : popularTv.map((m) => toItem(m, "tv"))),
+    [tab, popularMovies, popularTv]
+  );
+  const topList = useMemo(
+    () => (tab === "movie" ? topMovies.map((m) => toItem(m, "movie")) : topTv.map((m) => toItem(m, "tv"))),
+    [tab, topMovies, topTv]
+  );
+
+  // Debounced API search (typed by active tab)
+  useEffect(() => {
+    if (!query.trim()) {
+      setSearchResults(null);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`/api/search?type=${tab}&q=${encodeURIComponent(query.trim())}`);
+        const data = await res.json();
+        const list: TMDBMovie[] = data.results ?? [];
+        const items = list.map((m) => toItem(m, tab));
+        setSearchResults(items);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query, tab]);
 
   function applyFilters(list: Item[]) {
-    return list.filter((item) => {
-      if (minRating !== "any" && item.rating < minRating) return false;
-      if (query) {
-        const q = query.toLowerCase();
-        if (!item.title.toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
+    return list.filter((item) => (minRating === "any" ? true : item.rating >= minRating));
   }
 
-  const filteredPopular = useMemo(() => applyFilters(popularList), [popularList, query, minRating]);
-  const filteredTopRated = useMemo(() => applyFilters(topRatedList), [topRatedList, query, minRating]);
+  const results = useMemo(
+    () => (searchResults ? applyFilters(searchResults) : []),
+    [searchResults, minRating]
+  );
+  const quickPicks = useMemo(() => applyFilters(popularList).slice(0, 6), [popularList, minRating]);
 
-  const heroItem = popularList[0] ?? topRatedList[0];
+  const heroItem = popularList[0] ?? topList[0];
 
   return (
     <main className="container page">
@@ -90,7 +118,7 @@ export default function ClientFeatured({ popular, topRated }: ClientProps) {
         </div>
 
         <nav className="topnav" aria-label="Primary">
-          <button className={`tab ${tab === "movies" ? "active" : ""}`} onClick={() => setTab("movies")}>
+          <button className={`tab ${tab === "movie" ? "active" : ""}`} onClick={() => setTab("movie")}>
             Movies
           </button>
           <button className={`tab ${tab === "tv" ? "active" : ""}`} onClick={() => setTab("tv")}>
@@ -101,7 +129,7 @@ export default function ClientFeatured({ popular, topRated }: ClientProps) {
         <div className="controls">
           <div className="search">
             <input
-              placeholder={`Search ${tab === "movies" ? "movies" : "TV shows"}...`}
+              placeholder={`Search ${tab === "movie" ? "movies" : "TV shows"}...`}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               aria-label="Search"
@@ -115,11 +143,16 @@ export default function ClientFeatured({ popular, topRated }: ClientProps) {
           <div className="hero-left">
             <h1>Watch cinematic stories that move you.</h1>
             <p className="lead">Sleek curation. Personalized picks. Stream anytime, anywhere.</p>
+            <p className="slogan">Stream smarter • Curated daily • Fresh picks for you</p>
 
             <div className="filters">
               <div className="filter">
                 <label>Min rating</label>
-                <select value={minRating} onChange={(e) => setMinRating(e.target.value === "any" ? "any" : Number(e.target.value))}>
+                <select
+                  className="select rating-select"
+                  value={minRating}
+                  onChange={(e) => setMinRating(e.target.value === "any" ? "any" : Number(e.target.value))}
+                >
                   <option value="any">Any</option>
                   <option value="9">9+</option>
                   <option value="8">8+</option>
@@ -127,54 +160,85 @@ export default function ClientFeatured({ popular, topRated }: ClientProps) {
                 </select>
               </div>
             </div>
-          </div>
 
-          <div className="hero-right" aria-hidden>
+            {/* Optional: small hero item chip under copy */}
             {heroItem && (
-              <div
-                className="promo-card"
-                role="link"
-                tabIndex={0}
-                aria-label={`Open details for ${heroItem.title}`}
-                onClick={() => router.push(`/title/${heroItem.id}?type=${heroItem.type}`)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    router.push(`/title/${heroItem.id}?type=${heroItem.type}`);
-                  }
-                }}
-              >
-                {heroItem.poster ? (
-                  <img className="promo-media" src={heroItem.poster} alt={heroItem.title} />
-                ) : (
-                  <div className="poster-placeholder" />
-                )}
-                <div className="promo-meta">
-                  <div className="chip">
-                    <span>⭐ {heroItem.rating || "—"}</span>
-                    <span>•</span>
+              <div className="mini-hero">
+                {heroItem.poster ? <img src={heroItem.poster} alt="" /> : <div className="poster-placeholder" />}
+                <div className="mini-meta">
+                  <strong className="mini-title">{heroItem.title}</strong>
+                  <div className="mini-sub">
                     <span>{heroItem.year || "—"}</span>
-                  </div>
-                  <h3 className="promo-title">{heroItem.title}</h3>
-                  <div className="promo-sub">
-                    <span className="muted">Click to open details</span>
+                    <span>•</span>
+                    <span>⭐ {heroItem.rating || "—"}</span>
                   </div>
                 </div>
               </div>
             )}
           </div>
+
+          {/* Right side: Search results panel (replaces big poster) */}
+          <aside className="hero-right">
+            <div className="search-panel">
+              <div className="panel-head">
+                <h3>Search results</h3>
+                <span className="muted">
+                  {query.trim().length === 0
+                    ? "Type to search"
+                    : loading
+                    ? "Searching…"
+                    : `${results.length} match${results.length === 1 ? "" : "es"}`}
+                </span>
+              </div>
+
+              <div className="results-list" role="list">
+                {query.trim().length === 0 && quickPicks.length > 0 && (
+                  <div className="empty">Quick picks</div>
+                )}
+
+                {(query.trim().length === 0 ? quickPicks : results).map((it) => (
+                  <Link
+                    key={`res-${it.id}`}
+                    href={`/title/${it.id}?type=${it.type}`}
+                    className="result-row"
+                    role="listitem"
+                    aria-label={`Open ${it.title}`}
+                  >
+                    <div className="thumb">
+                      {it.poster ? <img src={it.poster} alt="" /> : <div className="poster-placeholder" />}
+                    </div>
+                    <div className="info">
+                      <div className="top">
+                        <strong className="title">{it.title}</strong>
+                        <span className="chip">{Number(it.rating).toFixed(1)}</span>
+                      </div>
+                      <div className="sub">
+                        <span className="muted">{it.year || "—"}</span>
+                        <span className="dot">•</span>
+                        <span className="muted">{it.type === "movie" ? "Movie" : "TV"}</span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+
+                {query.trim().length > 0 && !loading && results.length === 0 && (
+                  <div className="empty">No results</div>
+                )}
+              </div>
+            </div>
+          </aside>
         </div>
       </section>
 
-      <section className="grid-section" aria-live="polite">
+      {/* Always show the main sections; search no longer replaces them */}
+      <section className="grid-section">
         <div className="grid-head">
-          <h2>Popular</h2>
-          <p className="muted">{filteredPopular.length} results</p>
+          <h2>Popular {tab === "movie" ? "Movies" : "TV Shows"}</h2>
+          <p className="muted">{applyFilters(popularList).length} results</p>
         </div>
-
         <div className="card-grid" role="list">
-          {filteredPopular.map((it) => (
-            <Link key={`popular-${it.id}`} href={`/title/${it.id}?type=${it.type}`} className="card-link" role="listitem" aria-label={`Open details for ${it.title}`}>
+          {applyFilters(popularList).map((it) => (
+            <Link key={`pop-${it.id}`} href={`/title/${it.id}?type=${it.type}`} className="card-link" role="listitem">
               <article className="card" tabIndex={0}>
                 <div className="poster">
                   {it.poster ? <img src={it.poster} alt={`${it.title} poster`} /> : <div className="poster-placeholder" />}
@@ -191,24 +255,17 @@ export default function ClientFeatured({ popular, topRated }: ClientProps) {
               </article>
             </Link>
           ))}
-          {filteredPopular.length === 0 && (
-            <div className="empty">
-              <h3>No results</h3>
-              <p>Try adjusting filters or search terms.</p>
-            </div>
-          )}
         </div>
       </section>
 
       <section className="grid-section" style={{ marginTop: 14 }}>
         <div className="grid-head">
-          <h2>Top Rated</h2>
-          <p className="muted">{filteredTopRated.length} results</p>
+          <h2>Top Rated {tab === "movie" ? "Movies" : "TV Shows"}</h2>
+          <p className="muted">{applyFilters(topList).length} results</p>
         </div>
-
         <div className="card-grid" role="list">
-          {filteredTopRated.map((it) => (
-            <Link key={`top-${it.id}`} href={`/title/${it.id}?type=${it.type}`} className="card-link" role="listitem" aria-label={`Open details for ${it.title}`}>
+          {applyFilters(topList).map((it) => (
+            <Link key={`top-${it.id}`} href={`/title/${it.id}?type=${it.type}`} className="card-link" role="listitem">
               <article className="card" tabIndex={0}>
                 <div className="poster">
                   {it.poster ? <img src={it.poster} alt={`${it.title} poster`} /> : <div className="poster-placeholder" />}
@@ -225,12 +282,6 @@ export default function ClientFeatured({ popular, topRated }: ClientProps) {
               </article>
             </Link>
           ))}
-          {filteredTopRated.length === 0 && (
-            <div className="empty">
-              <h3>No results</h3>
-              <p>Try adjusting filters or search terms.</p>
-            </div>
-          )}
         </div>
       </section>
     </main>

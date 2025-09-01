@@ -2,11 +2,24 @@ import React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { fetchTmdbDetails, TMDBDetails, TMDBGenre, TMDBCastItem, TMDBVideo, TMDBMovieShort } from "@/lib/tmdb";
+import EpisodePicker from "@/components/EpisodePicker";
 
 type Props = {
   params: { id: string } | Promise<{ id: string }>;
   searchParams?: { type?: string } | Promise<{ type?: string }>;
 };
+
+type SeasonLite = { season_number: number; episode_count?: number; name?: string };
+
+function isSeasonLite(x: unknown): x is SeasonLite {
+  if (typeof x !== "object" || x === null) return false;
+  const r = x as Record<string, unknown>;
+  return (
+    typeof r.season_number === "number" &&
+    (r.episode_count === undefined || typeof r.episode_count === "number") &&
+    (r.name === undefined || typeof r.name === "string")
+  );
+}
 
 function formatRuntime(mins?: number) {
   if (!mins || mins <= 0) return "—";
@@ -22,6 +35,10 @@ export default async function Page(props: Props) {
   const searchParams = await (props.searchParams ?? {});
   const id = params.id;
   const type = (searchParams?.type || "movie").toLowerCase() === "tv" ? "tv" : "movie";
+
+  // MOVIE_ENDPOINT (server only)
+  const movieBase = (process.env.MOVIE_ENDPOINT || "").replace(/\/+$/, "");
+  const subQS = "?ds_lang=en"; // default subs to English
 
   let details: TMDBDetails | null = null;
   try {
@@ -49,9 +66,6 @@ export default async function Page(props: Props) {
   const poster = details.poster_path ? `${TMDB_IMG}w500${details.poster_path}` : null;
   const overview = details.overview ?? "";
 
-  const movieBase = (process.env.MOVIE_ENDPOINT || process.env.NEXT_PUBLIC_MOVIE_ENDPOINT || "").replace(/\/+$/, "");
-  const upstreamWatchUrl = movieBase ? `${movieBase}/embed/movie/${encodeURIComponent(id)}` : "";
-
   const directors = (details.credits?.crew ?? []).filter((c) => c.job === "Director").map((d) => d.name);
   const castList: TMDBCastItem[] = (details.credits?.cast ?? []).slice(0, 12);
   const trailer = (details.videos?.results ?? []).find(
@@ -59,6 +73,16 @@ export default async function Page(props: Props) {
   );
   const runtimeStr = formatRuntime(details.runtime);
   const similar: TMDBMovieShort[] = (details.similar?.results ?? []).slice(0, 12);
+  // Seasons (no 'any')
+  const seasonsUnknown = (details as { seasons?: unknown }).seasons;
+  const seasonsAll: SeasonLite[] = Array.isArray(seasonsUnknown) ? seasonsUnknown.filter(isSeasonLite) : [];
+  const seasons = seasonsAll.filter((s) => (s.season_number ?? 0) > 0);
+  const firstSeason = seasons.find((s) => (s.episode_count ?? 0) > 0)?.season_number || 1;
+
+  const upstreamMovieUrl = movieBase ? `${movieBase}/embed/movie/${encodeURIComponent(id)}${subQS}` : "";
+  const upstreamTvUrl = movieBase
+    ? `${movieBase}/embed/tv/${encodeURIComponent(id)}/${encodeURIComponent(String(firstSeason))}/1${subQS}`
+    : "";
 
   let certification = "";
   if (details.release_dates?.results) {
@@ -67,29 +91,10 @@ export default async function Page(props: Props) {
     if (rel?.certification) certification = rel.certification;
   }
 
-  // Ambient trailer only behind the hero
-  const ambientUrl = trailer
-    ? `https://www.youtube.com/embed/${trailer.key}?autoplay=1&mute=1&loop=1&playlist=${trailer.key}&controls=0&showinfo=0&modestbranding=1&playsinline=1&rel=0&iv_load_policy=3`
-    : null;
-
   return (
     <main className="container title-page">
       <div className="title-hero-shell">
-        {ambientUrl && (
-          <div className="hero-ambient" aria-hidden="true">
-            <div className="ambient-media">
-              <iframe
-                src={ambientUrl}
-                title="Ambient trailer"
-                allow="autoplay; encrypted-media; picture-in-picture"
-                referrerPolicy="no-referrer-when-downgrade"
-              />
-            </div>
-            <div className="ambient-dim" />
-            <div className="ambient-fade" />
-          </div>
-        )}
-
+        {/* Removed ambient trailer background */}
         {/* HERO */}
         <div className="title-hero">
           <aside className="title-poster">
@@ -129,17 +134,21 @@ export default async function Page(props: Props) {
               </section>
             )}
 
-            {/* Actions next to poster */}
+            {/* Actions next to poster (open Vidsrc directly) */}
             <div className="title-actions">
               <div className="actions-primary">
-                <Link href={`/`} className="btn lg ghost">Back</Link>
-                {upstreamWatchUrl ? (
-                  <a href={upstreamWatchUrl} target="_blank" rel="noopener noreferrer" className="btn lg primary">
+                <Link href="/" className="btn lg ghost">Back</Link>
+                {type === "tv" ? (
+                  upstreamTvUrl ? (
+                    <a href={upstreamTvUrl} target="_blank" rel="noopener noreferrer" className="btn lg primary">
+                      Watch on Vidsrc (S{firstSeason}E1)
+                    </a>
+                  ) : null
+                ) : upstreamMovieUrl ? (
+                  <a href={upstreamMovieUrl} target="_blank" rel="noopener noreferrer" className="btn lg primary">
                     Watch on Vidsrc
                   </a>
-                ) : (
-                  <Link href={`/watch/${id}?type=${type}`} className="btn lg primary">Open Watch Page</Link>
-                )}
+                ) : null}
               </div>
               <div className="actions-secondary">
                 {trailer && (
@@ -192,6 +201,11 @@ export default async function Page(props: Props) {
               ))}
             </div>
           </details>
+        )}
+
+        {/* Episodes for TV; pass movieBase so cards can link directly */}
+        {type === "tv" && seasons.length > 0 && (
+          <EpisodePicker tvId={String(id)} seasons={seasons} initialSeason={firstSeason} movieBase={movieBase} />
         )}
 
         {similar.length > 0 && (
