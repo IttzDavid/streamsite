@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { fetchTmdbDetails, TMDBDetails, TMDBGenre, TMDBCastItem, TMDBVideo, TMDBMovieShort } from "@/lib/tmdb";
 import EpisodePicker from "@/components/EpisodePicker";
+import { buildEmbedUrl, getEmbedBase } from "@/lib/embed";
 
 type Props = {
   params: { id: string } | Promise<{ id: string }>;
@@ -36,9 +37,7 @@ export default async function Page(props: Props) {
   const id = params.id;
   const type = (searchParams?.type || "movie").toLowerCase() === "tv" ? "tv" : "movie";
 
-  // MOVIE_ENDPOINT (server only)
-  const movieBase = (process.env.MOVIE_ENDPOINT || "").replace(/\/+$/, "");
-  const subQS = "?ds_lang=en"; // default subs to English
+  const movieBase = getEmbedBase();
 
   let details: TMDBDetails | null = null;
   try {
@@ -79,10 +78,19 @@ export default async function Page(props: Props) {
   const seasons = seasonsAll.filter((s) => (s.season_number ?? 0) > 0);
   const firstSeason = seasons.find((s) => (s.episode_count ?? 0) > 0)?.season_number || 1;
 
-  const upstreamMovieUrl = movieBase ? `${movieBase}/embed/movie/${encodeURIComponent(id)}${subQS}` : "";
-  const upstreamTvUrl = movieBase
-    ? `${movieBase}/embed/tv/${encodeURIComponent(id)}/${encodeURIComponent(String(firstSeason))}/1${subQS}`
-    : "";
+  const upstreamMovieUrl = buildEmbedUrl({ base: movieBase, type: "movie", id, query: { ds_lang: "en" } });
+  const upstreamTvUrl = buildEmbedUrl({
+    base: movieBase,
+    type: "tv",
+    id,
+    season: firstSeason,
+    episode: 1,
+    query: { ds_lang: "en" },
+  });
+  const playerUrl =
+    type === "tv"
+      ? `/player/${encodeURIComponent(id)}?type=tv&season=${encodeURIComponent(String(firstSeason))}&episode=1`
+      : `/player/${encodeURIComponent(id)}?type=movie`;
 
   let certification = "";
   if (details.release_dates?.results) {
@@ -149,6 +157,9 @@ export default async function Page(props: Props) {
                     Watch on Vidsrc
                   </a>
                 ) : null}
+                <Link href={playerUrl} className="btn lg ghost">
+                  Open player
+                </Link>
               </div>
               <div className="actions-secondary">
                 {trailer && (
